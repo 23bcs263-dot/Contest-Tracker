@@ -68,22 +68,26 @@ async function getContestQuestions(contestSlug: string, solvedSlugs: Set<string>
 
 export async function getLeetCodeContests(username: string, page = 1, pageSize = 8): Promise<{ contests: Contest[]; totalContests: number; totalQuestions: number; solvedQuestions: number; completedContests: number }> {
   const solvedSlugs = await getSolvedSlugs(username);
-  const data = await queryLeetCode<{ userContestRankingHistory: ContestHistoryNode[] }>(
-    "query contestHistory($username: String!) { userContestRankingHistory(username: $username) { attended problemsSolved contest { title titleSlug startTime } } }",
-    { username },
-  );
-  const contestNodes = data.userContestRankingHistory.filter((entry) =>
-    entry.attended &&
-    entry.contest.startTime <= Math.floor(Date.now() / 1000) &&
-    (entry.contest.title.startsWith("Weekly Contest") || entry.contest.title.startsWith("Biweekly Contest")),
-  ).sort((left, right) => right.contest.startTime - left.contest.startTime);
+  const [contestData, historyData] = await Promise.all([
+    queryLeetCode<{ allContests: ContestNode[] }>("query { allContests { title titleSlug startTime } }"),
+    queryLeetCode<{ userContestRankingHistory: ContestHistoryNode[] }>(
+      "query contestHistory($username: String!) { userContestRankingHistory(username: $username) { attended problemsSolved contest { title titleSlug startTime } } }",
+      { username },
+    ),
+  ]);
+  const history = new Map(historyData.userContestRankingHistory.filter((entry) => entry.attended).map((entry) => [entry.contest.titleSlug, entry]));
+  const contestNodes = contestData.allContests.filter((contest) =>
+    contest.startTime <= Math.floor(Date.now() / 1000) &&
+    (contest.title.startsWith("Weekly Contest") || contest.title.startsWith("Biweekly Contest")),
+  ).sort((left, right) => right.startTime - left.startTime);
+  const attendedEntries = [...history.values()];
   const totalQuestions = contestNodes.length * 4;
-  const solvedQuestions = contestNodes.reduce((total, entry) => total + entry.problemsSolved, 0);
-  const completedContests = contestNodes.filter((entry) => entry.problemsSolved >= 4).length;
+  const solvedQuestions = attendedEntries.reduce((total, entry) => total + entry.problemsSolved, 0);
+  const completedContests = attendedEntries.filter((entry) => entry.problemsSolved >= 4).length;
   const startIndex = Math.max(0, (page - 1) * pageSize);
     const pageNodes = contestNodes.slice(startIndex, startIndex + pageSize);
-    const pageContests = await Promise.all(pageNodes.map(async (entry, pageIndex) => {
-      const contest = entry.contest;
+      const pageContests = await Promise.all(pageNodes.map(async (contest, pageIndex) => {
+        const historyEntry = history.get(contest.titleSlug);
       const questions = await getContestQuestions(contest.titleSlug, solvedSlugs);
       const type: ContestType = contest.title.startsWith("Weekly") ? "WEEKLY" : "BIWEEKLY";
       const contestNumber = Number(contest.title.match(/\d+$/)?.[0] ?? startIndex + pageIndex + 1);
@@ -95,7 +99,7 @@ export async function getLeetCodeContests(username: string, page = 1, pageSize =
         type,
         date: new Date(contest.startTime * 1000).toISOString().slice(0, 10),
         questions,
-        solvedCount: entry.problemsSolved,
+        solvedCount: historyEntry?.problemsSolved ?? 0,
       } satisfies Contest;
     }));
 
