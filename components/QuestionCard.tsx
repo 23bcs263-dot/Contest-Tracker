@@ -1,0 +1,8 @@
+import { Check, ExternalLink, X } from "lucide-react";
+import type { ContestQuestion } from "@/types/contest";
+
+export function QuestionCard({ question }: { question: ContestQuestion }) {
+  const problemUrl = `https://leetcode.com/problems/${question.slug}/`;
+  const difficultyColor = question.difficulty === "Easy" ? "text-emerald-400" : question.difficulty === "Medium" ? "text-amber-400" : question.difficulty === "Hard" ? "text-rose-400" : "text-slate-500";
+  return <a href={problemUrl} target="_blank" rel="noreferrer" aria-label={`${question.title}, ${question.solved ? "solved" : "not solved"}`} className={`group block rounded-lg border p-3 transition-all hover:-translate-y-0.5 ${question.solved ? "border-emerald-400/20 bg-emerald-400/[0.06] hover:border-emerald-400/45" : "border-rose-400/20 bg-rose-400/[0.045] hover:border-rose-400/45"}`}><div className="flex items-start justify-between gap-2"><span className="font-mono text-[11px] font-bold text-slate-500">Q{question.number}</span><ExternalLink aria-hidden="true" className="h-3.5 w-3.5 text-slate-600 opacity-0 transition-opacity group-hover:opacity-100" /></div><p className="mt-2 min-h-10 text-sm font-medium leading-5 text-slate-200">{question.title}</p><div className="mt-3 flex items-center justify-between gap-2 text-[11px]"><span className={difficultyColor}>{question.difficulty}</span><span className={`flex items-center gap-1 ${question.solved ? "text-emerald-400" : "text-rose-400"}`}>{question.solved ? <Check aria-hidden="true" className="h-3.5 w-3.5" /> : <X aria-hidden="true" className="h-3.5 w-3.5" />}{question.solved ? "Solved" : "Not solved"}</span></div></a>;
+}

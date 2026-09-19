@@ -1,0 +1,13 @@
+import { CalendarDays } from "lucide-react";
+import type { Contest } from "@/types/contest";
+import { QuestionCard } from "./QuestionCard";
+
+export function ContestCard({ contest }: { contest: Contest }) {
+  const solvedCount = contest.solvedCount ?? contest.questions.filter((question) => question.solved).length;
+  const completionPercentage = Math.round((solvedCount / contest.questions.length) * 100);
+  const isComplete = solvedCount >= contest.questions.length;
+  const displayQuestions = contest.solvedCount === undefined
+    ? contest.questions
+    : contest.questions.map((question, index) => ({ ...question, solved: index < solvedCount }));
+  return <article className="rounded-xl border border-white/[0.07] bg-[#111821] p-4 shadow-[0_8px_30px_rgba(0,0,0,0.14)] transition-all hover:-translate-y-0.5 hover:border-white/[0.14] sm:p-5"><div className="flex items-start justify-between gap-4"><div><div className="flex items-center gap-2"><span className={`h-1.5 w-1.5 rounded-full ${contest.type === "WEEKLY" ? "bg-cyan-400" : "bg-violet-400"}`} /><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">{contest.type === "WEEKLY" ? "Weekly" : "Biweekly"}</p></div><h2 className="mt-2 text-base font-semibold text-slate-100">{contest.name}</h2><p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500"><CalendarDays aria-hidden="true" className="h-3.5 w-3.5" />{contest.date}</p></div><span className={`rounded-full border px-2 py-1 text-[10px] font-medium ${isComplete ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-300" : "border-amber-400/20 bg-amber-400/[0.07] text-amber-300"}`}>{isComplete ? "Complete" : "In progress"}</span></div><div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">{displayQuestions.map((question) => <QuestionCard key={question.number} question={question} />)}</div><div className="mt-5 flex items-center justify-between gap-4 border-t border-white/[0.06] pt-4"><span className="font-mono text-xs text-slate-400">{solvedCount} / {contest.questions.length} solved</span><div className="flex items-center gap-3"><div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-800"><div className={`h-full rounded-full ${isComplete ? "bg-emerald-400" : "bg-cyan-400"}`} style={{ width: `${completionPercentage}%` }} /></div><span className="font-mono text-xs font-semibold text-slate-300">{completionPercentage}%</span></div></div></article>;
+}
