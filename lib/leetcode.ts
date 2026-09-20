@@ -24,15 +24,31 @@ interface AcceptedSubmission {
   titleSlug: string;
 }
 
+interface SubmissionNode {
+  titleSlug: string;
+  statusDisplay: string;
+}
+
+interface UserStatus {
+  username: string | null;
+}
+
 interface GraphQLResponse<T> {
   data?: T;
   errors?: Array<{ message: string }>;
 }
 
 async function queryLeetCode<T>(query: string, variables?: Record<string, string | number>): Promise<T> {
+  const csrfToken = process.env.LEETCODE_CSRF_TOKEN?.trim();
+  const session = process.env.LEETCODE_SESSION?.trim();
   const response = await fetch(LEETCODE_GRAPHQL_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(session ? { Cookie: `LEETCODE_SESSION=${session}${csrfToken ? `; csrftoken=${csrfToken}` : ""}` } : {}),
+      ...(csrfToken ? { "x-csrftoken": csrfToken } : {}),
+      ...(session ? { Referer: "https://leetcode.com/" } : {}),
+    },
     body: JSON.stringify({ query, variables }),
     cache: "no-store",
   });
@@ -44,11 +60,45 @@ async function queryLeetCode<T>(query: string, variables?: Record<string, string
 }
 
 async function getSolvedSlugs(username: string): Promise<Set<string>> {
+  if (process.env.LEETCODE_SESSION?.trim()) {
+    const status = await queryLeetCode<{ userStatus: UserStatus }>("query { userStatus { username } }");
+    if (status.userStatus.username?.toLowerCase() === username.toLowerCase()) {
+    const solvedSlugs = new Set<string>();
+    const limit = 20;
+    let offset = 0;
+    let hasNext = true;
+
+    while (hasNext) {
+      const data = await queryLeetCode<{
+        submissionList: { hasNext: boolean; submissions: SubmissionNode[] };
+      }>(
+        "query submissions($limit: Int!, $offset: Int!) { submissionList(limit: $limit, offset: $offset) { hasNext submissions { titleSlug statusDisplay } } }",
+        { limit, offset },
+      );
+
+      for (const submission of data.submissionList.submissions) {
+        if (submission.statusDisplay === "Accepted") solvedSlugs.add(submission.titleSlug);
+      }
+      hasNext = data.submissionList.hasNext;
+      offset += limit;
+    }
+
+    return solvedSlugs;
+    }
+  }
+
   const data = await queryLeetCode<{ recentAcSubmissionList: AcceptedSubmission[] }>(
     "query recentAccepted($username: String!, $limit: Int!) { recentAcSubmissionList(username: $username, limit: $limit) { titleSlug } }",
     { username, limit: 1000 },
   );
   return new Set(data.recentAcSubmissionList.map((submission) => submission.titleSlug));
+}
+
+export async function getLeetCodeUsername(): Promise<string> {
+  if (!process.env.LEETCODE_SESSION?.trim()) throw new Error("LEETCODE_SESSION is not configured");
+  const status = await queryLeetCode<{ userStatus: UserStatus }>("query { userStatus { username } }");
+  if (!status.userStatus.username) throw new Error("The LeetCode session is not authenticated");
+  return status.userStatus.username;
 }
 
 async function getContestQuestions(contestSlug: string, solvedSlugs: Set<string>): Promise<ContestQuestion[]> {
@@ -87,7 +137,6 @@ export async function getLeetCodeContests(username: string, page = 1, pageSize =
   const startIndex = Math.max(0, (page - 1) * pageSize);
     const pageNodes = contestNodes.slice(startIndex, startIndex + pageSize);
       const pageContests = await Promise.all(pageNodes.map(async (contest, pageIndex) => {
-        const historyEntry = history.get(contest.titleSlug);
       const questions = await getContestQuestions(contest.titleSlug, solvedSlugs);
       const type: ContestType = contest.title.startsWith("Weekly") ? "WEEKLY" : "BIWEEKLY";
       const contestNumber = Number(contest.title.match(/\d+$/)?.[0] ?? startIndex + pageIndex + 1);
@@ -99,7 +148,7 @@ export async function getLeetCodeContests(username: string, page = 1, pageSize =
         type,
         date: new Date(contest.startTime * 1000).toISOString().slice(0, 10),
         questions,
-        solvedCount: historyEntry?.problemsSolved ?? 0,
+        solvedCount: questions.filter((question) => question.solved).length,
       } satisfies Contest;
     }));
 
